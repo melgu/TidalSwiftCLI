@@ -28,7 +28,7 @@ final class TidalServer {
 	
 	private let server = Server(
 		name: "tidal",
-		version: "1.0.0",
+		version: toolVersion,
 		title: "Tidal",
 		instructions: instructions,
 		capabilities: .init(tools: .init(listChanged: false))

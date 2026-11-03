@@ -8,11 +8,15 @@
 
 import ArgumentParser
 
+/// The tool's version, for `--version` and the MCP server. Matches the release tag.
+let toolVersion = "1.0.0"
+
 @main
 struct Tidal: AsyncParsableCommand {
 	static let configuration = CommandConfiguration(
 		commandName: "tidal",
 		abstract: "Manage your Tidal playlists and favorites, search, and download.",
+		version: toolVersion,
 		subcommands: [
 			Login.self,
 			Logout.self,

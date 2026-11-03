@@ -45,3 +45,9 @@ claude mcp add -s user tidal -- tidal mcp
 ```
 
 Other clients take the command `tidal` with the argument `mcp`.
+
+
+
+## License
+
+TidalSwiftCLI is licensed under the [GNU General Public License v3.0](LICENSE).
