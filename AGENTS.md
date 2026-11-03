@@ -19,10 +19,10 @@ Output: text by default, JSON with `--json`, both on stdout. Messages and progre
 
 ## Build, Test, and Development Commands
 
-- `./build.sh [debug|release|install]`
-  Build the tool and sign it with the development certificate. Use this instead of plain `swift build`: an ad hoc signed build counts as a new app to the Keychain and asks for access after every build. `install` builds release and copies it to `/usr/local/bin` (or `TIDAL_INSTALL_DIR`), so the installed `tidal` and MCP clients using it aren't affected by development builds. It also installs zsh completion.
+- `./build.sh [debug|release|universal|install]`
+  Build the tool and sign it with the development certificate. `universal` builds release for Apple silicon and Intel in one binary, as the releases ship it. Use this instead of plain `swift build`: an ad hoc signed build counts as a new app to the Keychain and asks for access after every build. `install` builds release and copies it to `/usr/local/bin` (or `TIDAL_INSTALL_DIR`), so the installed `tidal` and MCP clients using it aren't affected by development builds. It also installs zsh completion.
 - `./release.sh <version>`
-  Prepare a release: sets `toolVersion` in `Tidal.swift`, builds and checks `tidal --version`, commits "Bump version to …" and creates the tag. It refuses to run with uncommitted changes, off main, or while `Package.swift` depends on a local package. Don't change `toolVersion` by hand; versions follow semantic versioning (`1.2.0`).
+  Release a new version: sets `toolVersion` in `Tidal.swift`, builds a universal binary and checks its version and architectures, commits "Bump version to …", tags and pushes. Then it creates the GitHub release with `tidal-<version>-macos.tar.gz` (binary, license, README) and updates the `tidalswift-cli` formula in the Homebrew tap, a clone of [melgu/homebrew-tap](https://github.com/melgu/homebrew-tap) at `../homebrew-tap` (or `TIDAL_TAP_DIR`). It refuses to run with uncommitted changes, off main, behind origin, or while `Package.swift` depends on a local package. Don't change `toolVersion` by hand; versions follow semantic versioning (`1.2.0`).
 
 The tool depends on TidalSwiftLib by its GitHub URL, up to the next minor version, as the library is below 1.0.0 and a minor version can break its API. To work on the library at the same time, clone it next to this repo and run `swift package edit TidalSwiftLib --path ../TidalSwiftLib`, which builds against that folder without changing `Package.swift`. `swift package unedit TidalSwiftLib` switches back. After a library release, raise the requirement in `Package.swift` if needed and run `swift package update`.
 

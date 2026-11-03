@@ -8,7 +8,15 @@ Requires macOS 14.
 
 ## Installation
 
-Build it from source with Swift 6.2:
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install melgu/tap/tidalswift-cli
+```
+
+This installs `tidal` with completion for zsh, bash and fish, for Apple silicon and Intel Macs.
+
+Or build it from source with Swift 6.2:
 
 ```sh
 git clone https://github.com/melgu/TidalSwiftCLI
