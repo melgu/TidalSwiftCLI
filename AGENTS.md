@@ -21,6 +21,8 @@ Output: text by default, JSON with `--json`, both on stdout. Messages and progre
 
 - `./build.sh [debug|release|install]`
   Build the tool and sign it with the development certificate. Use this instead of plain `swift build`: an ad hoc signed build counts as a new app to the Keychain and asks for access after every build. `install` builds release and copies it to `/usr/local/bin` (or `TIDAL_INSTALL_DIR`), so the installed `tidal` and MCP clients using it aren't affected by development builds. It also installs zsh completion.
+- `./release.sh <version>`
+  Prepare a release: sets `toolVersion` in `Tidal.swift`, builds and checks `tidal --version`, commits "Bump version to …" and creates the tag. It refuses to run with uncommitted changes, off main, or while `Package.swift` depends on a local package. Don't change `toolVersion` by hand; versions follow semantic versioning (`1.2.0`).
 
 To work on the library at the same time, clone TidalSwiftLib next to this repo and point `Package.swift` to it with `.package(path: "../TidalSwiftLib")`, without committing that change.
 
