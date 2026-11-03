@@ -24,7 +24,7 @@ Output: text by default, JSON with `--json`, both on stdout. Messages and progre
 - `./release.sh <version>`
   Prepare a release: sets `toolVersion` in `Tidal.swift`, builds and checks `tidal --version`, commits "Bump version to …" and creates the tag. It refuses to run with uncommitted changes, off main, or while `Package.swift` depends on a local package. Don't change `toolVersion` by hand; versions follow semantic versioning (`1.2.0`).
 
-To work on the library at the same time, clone TidalSwiftLib next to this repo and point `Package.swift` to it with `.package(path: "../TidalSwiftLib")`, without committing that change.
+The tool depends on TidalSwiftLib by its GitHub URL, up to the next minor version, as the library is below 1.0.0 and a minor version can break its API. To work on the library at the same time, clone it next to this repo and run `swift package edit TidalSwiftLib --path ../TidalSwiftLib`, which builds against that folder without changing `Package.swift`. `swift package unedit TidalSwiftLib` switches back. After a library release, raise the requirement in `Package.swift` if needed and run `swift package update`.
 
 There is no automated test suite. Test commands against a real account, and restore any playlists or favorites a test changes.
 
