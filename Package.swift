@@ -11,7 +11,7 @@ let package = Package(
 		.executable(name: "tidal", targets: ["tidal"])
 	],
 	dependencies: [
-		.package(url: "https://github.com/melgu/TidalSwiftLib", .upToNextMinor(from: "0.1.0")),
+		.package(url: "https://github.com/melgu/TidalSwiftLib", .upToNextMinor(from: "0.2.0")),
 		.package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
 		.package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.12.1")
 	],
