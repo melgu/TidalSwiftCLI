@@ -61,8 +61,8 @@ enum DownloadQuality: String, CaseIterable, Codable {
 func downloadFolder(path: String?, fallback: URL) throws -> URL {
 	let folder = path.map { URL(filePath: ($0 as NSString).expandingTildeInPath, directoryHint: .isDirectory) } ?? fallback
 	var isDirectory: ObjCBool = false
-	guard FileManager.default.fileExists(atPath: folder.path(), isDirectory: &isDirectory), isDirectory.boolValue else {
-		throw CLIError("\(folder.path()) isn't a folder")
+	guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory), isDirectory.boolValue else {
+		throw CLIError("\(folder.path(percentEncoded: false)) isn't a folder")
 	}
 	return folder
 }
@@ -85,7 +85,7 @@ func download(session: Session, link: TidalLink, options: DownloadOptions, progr
 		}
 		do {
 			try await download.download(track: track, options: options)
-			return DownloadSummary(downloadedItems: 1, failures: [], destination: options.destination.path())
+			return DownloadSummary(downloadedItems: 1, failures: [], destination: options.destination.path(percentEncoded: false))
 		} catch {
 			throw CLIError("Couldn't download \(track.title): \(error.localizedDescription)")
 		}
@@ -95,7 +95,7 @@ func download(session: Session, link: TidalLink, options: DownloadOptions, progr
 		}
 		do {
 			try await download.download(video: video, options: options)
-			return DownloadSummary(downloadedItems: 1, failures: [], destination: options.destination.path())
+			return DownloadSummary(downloadedItems: 1, failures: [], destination: options.destination.path(percentEncoded: false))
 		} catch {
 			throw CLIError("Couldn't download \(video.title): \(error.localizedDescription)")
 		}
@@ -119,7 +119,7 @@ func download(session: Session, link: TidalLink, options: DownloadOptions, progr
 	return DownloadSummary(
 		downloadedItems: result.downloadedTracks,
 		failures: result.failures.map(DownloadSummary.Failure.init),
-		destination: options.destination.path()
+		destination: options.destination.path(percentEncoded: false)
 	)
 }
 
