@@ -13,6 +13,7 @@ import Foundation
 
 extension ItemKind: ExpressibleByArgument {}
 extension ReleaseType: ExpressibleByArgument {}
+extension DownloadQuality: ExpressibleByArgument {}
 
 func formatDuration(_ seconds: Int) -> String {
 	let hours = seconds / 3600

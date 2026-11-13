@@ -16,7 +16,8 @@ struct DownloadCommand: AsyncParsableCommand {
 		commandName: "download",
 		abstract: "Download a track, album, artist, playlist or video.",
 		discussion: """
-			Tracks come as FLAC (16 bit, 44.1 kHz), as Tidal only offers the lossy and Hi-Res qualities encrypted. \
+			Tracks come in the best quality the logins get: Max (FLAC up to 24 bit / 192 kHz) with the Hi-Res login, \
+			High (FLAC 16 bit / 44.1 kHz) otherwise, see `tidal login`. Dolby Atmos needs the Dolby Atmos login. \
 			Albums and playlists get a folder of their own, artists one per album. Existing files are replaced.
 			"""
 	)
@@ -26,6 +27,9 @@ struct DownloadCommand: AsyncParsableCommand {
 	
 	@Option(name: [.customLong("type"), .short], help: "What the ID is, if not a link.")
 	var type: ItemKind?
+	
+	@Option(name: [.customLong("quality"), .short], help: ArgumentHelp("Stereo quality: \(DownloadQuality.summary)"))
+	var quality: DownloadQuality = .max
 	
 	@Flag(help: "Download Dolby Atmos instead of stereo where available.")
 	var atmos = false
@@ -41,11 +45,17 @@ struct DownloadCommand: AsyncParsableCommand {
 		let link = try TidalLink(reference: item, kind: type)
 		
 		let destination = try downloadFolder(path: out, fallback: .currentDirectory())
-		let options = DownloadOptions(audioQuality: .high, preferDolbyAtmos: atmos, destination: destination)
+		let options = DownloadOptions(audioQuality: quality.audioQuality, preferDolbyAtmos: atmos, destination: destination)
 		
-		let summary = try await download(session: session, link: link, options: options) { step in
+		let warnings = downloadWarnings(session: session, options: options)
+		for warning in warnings {
+			printToStderr("Warning: \(warning)")
+		}
+		
+		var summary = try await download(session: session, link: link, options: options) { step in
 			printToStderr(step)
 		}
+		summary.warnings = warnings
 		
 		if output.json {
 			try printJSON(summary)

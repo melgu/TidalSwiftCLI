@@ -31,7 +31,9 @@ This installs `tidal` to `/usr/local/bin` and its zsh completion to `/usr/local/
 ## Usage
 
 ```sh
-tidal login                       # approve this device in the browser
+tidal login                       # asks which login: Dolby Atmos or Hi-Res
+tidal login --atmos               # Dolby Atmos login: approve this device in the browser
+tidal login --hi-res              # Hi-Res login: log in in the browser, paste the error page's address
 tidal search "Jacob Collier"
 tidal artist https://tidal.com/browse/artist/123456 --type eps-and-singles
 tidal new-releases --include-eps-and-singles
@@ -41,6 +43,8 @@ tidal download https://tidal.com/browse/album/123456
 ```
 
 Items are given as Tidal links or IDs. Most commands take `--json` for output that other tools can read. `tidal help <command>` shows all options.
+
+The two logins get different qualities. The Dolby Atmos login gets High (FLAC 16 bit / 44.1 kHz) and Dolby Atmos, the Hi-Res login Low, High and Max (FLAC up to 24 bit / 192 kHz), but no Dolby Atmos. Log in with both to get everything: downloads then take each from the login that gets it.
 
 
 

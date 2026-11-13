@@ -20,6 +20,41 @@ struct DownloadSummary: Codable {
 	let downloadedItems: Int
 	let failures: [Failure]
 	let destination: String
+	/// Why the download differs from what was asked for
+	var warnings: [String] = []
+}
+
+/// What the logins can't deliver of the options
+@MainActor
+func downloadWarnings(session: Session, options: DownloadOptions) -> [String] {
+	guard options.preferDolbyAtmos, !session.loginKinds.contains(.device) else { return [] }
+	return ["Dolby Atmos needs the Dolby Atmos login, so tracks come in stereo. Run `tidal login --atmos` to add it."]
+}
+
+/// The qualities downloads can have. Without the Hi-Res login, every one of them comes as High.
+enum DownloadQuality: String, CaseIterable, Codable {
+	/// AAC, 96 kbps
+	case low96
+	/// AAC, 320 kbps
+	case low320
+	/// FLAC, 16 bit / 44.1 kHz
+	case high
+	/// FLAC, up to 24 bit / 192 kHz
+	case max
+	
+	var audioQuality: AudioQuality {
+		switch self {
+		case .low96: .low
+		case .low320: .medium
+		case .high: .high
+		case .max: .max
+		}
+	}
+	
+	static let summary = """
+		low96 (AAC, 96 kbps), low320 (AAC, 320 kbps), high (FLAC, 16 bit / 44.1 kHz) \
+		or max (FLAC, up to 24 bit / 192 kHz). Only the Hi-Res login gets anything but high.
+		"""
 }
 
 /// The folder at a path, which may start with ~, or the fallback if none is given

@@ -176,12 +176,19 @@ let tools: [Tool] = [
 		title: "Download",
 		description: """
 			Download a track, album, artist, playlist or video to a folder on this Mac. \
-			Tracks come as FLAC (16 bit, 44.1 kHz), as Tidal only offers the lossy and Hi-Res qualities encrypted. \
+			Tracks come in the best quality the logins get: Max (FLAC up to 24 bit / 192 kHz) with the Hi-Res login, \
+			High (FLAC 16 bit / 44.1 kHz) otherwise. Dolby Atmos needs the Dolby Atmos login. \
+			The user adds a login with `tidal login --atmos` or `tidal login --hi-res` in a terminal. \
 			Albums and playlists get a folder of their own, artists one per album. Existing files are replaced.
 			""",
 		inputSchema: schema([
 			"item": string(itemDescription),
 			"type": kindProperty(typeDescription),
+			"quality": .object([
+				"type": "string",
+				"enum": .array(DownloadQuality.allCases.map { .string($0.rawValue) }),
+				"description": .string("Stereo quality: \(DownloadQuality.summary) Defaults to max.")
+			]),
 			"atmos": boolean("Download Dolby Atmos instead of stereo where available"),
 			"folder": string("Folder to download into, may start with ~. Defaults to ~/Downloads.")
 		], required: ["item"]),
@@ -258,8 +265,16 @@ func callTool(_ name: String, arguments: ToolArguments, session: Session, progre
 	case "download":
 		let link = try TidalLink(reference: arguments.string("item"), kind: arguments.kind("type"))
 		let destination = try downloadFolder(path: arguments.optionalString("folder"), fallback: .downloadsDirectory)
-		let options = DownloadOptions(audioQuality: .high, preferDolbyAtmos: try arguments.bool("atmos"), destination: destination)
-		return try jsonString(await download(session: session, link: link, options: options, progress: progress))
+		let quality = try arguments.optionalString("quality").map { string in
+			guard let quality = DownloadQuality(rawValue: string) else {
+				throw CLIError("quality must be one of \(DownloadQuality.allCases.map(\.rawValue).joined(separator: ", "))")
+			}
+			return quality
+		} ?? .max
+		let options = DownloadOptions(audioQuality: quality.audioQuality, preferDolbyAtmos: try arguments.bool("atmos"), destination: destination)
+		var summary = try await download(session: session, link: link, options: options, progress: progress)
+		summary.warnings = downloadWarnings(session: session, options: options)
+		return try jsonString(summary)
 	default:
 		throw MCPError.invalidParams("Unknown tool \(name)")
 	}

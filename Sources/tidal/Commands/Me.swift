@@ -37,5 +37,6 @@ struct Me: AsyncParsableCommand {
 			print("Plan:     \(subscription.type), \(subscription.status.lowercased()) until \(subscription.validUntil.formatted(date: .abbreviated, time: .omitted))")
 			print("Quality:  \(subscription.highestSoundQuality)")
 		}
+		print("Logins:   \(account.logins.joined(separator: ", "))")
 	}
 }

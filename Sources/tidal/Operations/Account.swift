@@ -25,6 +25,17 @@ struct Account: Codable {
 	let countryCode: String
 	/// Nil if it couldn't be loaded, which doesn't make the account itself unusable
 	let subscription: Subscription?
+	/// "Dolby Atmos" and "Hi-Res", see `tidal login`
+	let logins: [String]
+}
+
+extension LoginKind {
+	var name: String {
+		switch self {
+		case .device: "Dolby Atmos"
+		case .pkce: "Hi-Res"
+		}
+	}
 }
 
 @MainActor
@@ -51,6 +62,7 @@ func account(session: Session) async throws -> Account {
 		name: name.isEmpty ? nil : name,
 		email: user.email,
 		countryCode: user.countryCode,
-		subscription: subscription
+		subscription: subscription,
+		logins: LoginKind.allCases.filter(session.loginKinds.contains).map(\.name)
 	)
 }
