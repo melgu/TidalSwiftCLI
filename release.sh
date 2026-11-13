@@ -2,7 +2,9 @@
 # Releases a new version: sets the version in the code, builds a universal binary and checks it,
 # commits and tags, pushes, creates the GitHub release with the binary, and updates the Homebrew formula.
 #
-# Usage: ./release.sh <version>, e.g. ./release.sh 1.1.0
+# Usage: ./release.sh <version> [--notes <file>], e.g. ./release.sh 1.1.0
+#   --notes  Release notes in Markdown. Without it, the notes are written in the editor ($VISUAL,
+#            $EDITOR or TextEdit), from a template listing the commits since the last release.
 # Run it on main with a clean working copy. It needs gh, logged in, and a clone of melgu/homebrew-tap
 # at ../homebrew-tap (or TIDAL_TAP_DIR), also on main and clean.
 
@@ -14,8 +16,26 @@ fail() {
 	exit 1
 }
 
-version=${1:-}
-[[ $version =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || fail "Usage: $0 <version>, e.g. $0 1.1.0"
+usage="Usage: $0 <version> [--notes <file>], e.g. $0 1.1.0"
+version=""
+notes_input=""
+while (( $# )); do
+	case $1 in
+		--notes)
+			(( $# >= 2 )) || fail $usage
+			notes_input=$2
+			shift
+			;;
+		-*) fail $usage ;;
+		*)
+			[[ -z $version ]] || fail $usage
+			version=$1
+			;;
+	esac
+	shift
+done
+[[ $version =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || fail $usage
+[[ -z $notes_input || -f $notes_input ]] || fail "No notes at $notes_input."
 tap=${TIDAL_TAP_DIR:-../homebrew-tap}
 formula=$tap/Formula/tidalswift-cli.rb
 
@@ -30,6 +50,46 @@ gh auth status >/dev/null 2>&1 || fail "Log in with gh auth login first."
 [[ -f $formula ]] || fail "No formula at $formula. Clone melgu/homebrew-tap there or set TIDAL_TAP_DIR."
 [[ $(git -C "$tap" branch --show-current) == main && -z $(git -C "$tap" status --porcelain) ]] || fail "The tap at $tap has to be on main and clean."
 git -C "$tap" pull -q --ff-only
+
+# Asked first, so leaving the editor without notes doesn't leave a half-made release behind
+previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
+# Kept until the release is made, so a failed run continues with the notes written already
+notes=${TMPDIR:-/tmp}/tidal-release-notes-$version.md
+if [[ -n $notes_input ]]; then
+	cp "$notes_input" "$notes"
+else
+	[[ -t 0 ]] || fail "Pass the release notes with --notes <file>, as there's no terminal for the editor."
+	commits=$(git log --format='- %s' ${previous:+$previous..}HEAD)
+	[[ -f $notes ]] && echo "Continuing with the notes from the last run." || cat >|$notes <<-EOF
+	New
+	-
+
+	Improvements
+	-
+
+	Fixes
+	-
+
+	<!--
+	Release notes for tidal $version, in Markdown, for people using the tool: what changed for them,
+	not how. Delete the sections you don't need. This comment is left out.
+
+	Commits since ${previous:-the first one}:
+	$commits
+	-->
+	EOF
+	editor=${VISUAL:-${EDITOR:-}}
+	if [[ -n $editor ]]; then
+		${=editor} "$notes"
+	else
+		echo "Quit TextEdit when you're done."
+		open -W -t "$notes"
+	fi
+fi
+body=$(perl -0pe 's/<!--.*?-->\n?//gs' "$notes")
+# Template lines that weren't filled in
+! grep -qxE -- '-[[:space:]]*' <<<"$body" || fail "The notes still have empty \"-\" lines. Fill them in or delete them. They're in $notes."
+grep -q '[^[:space:]]' <<<"$body" || fail "The notes are empty."
 
 # The version is compiled in, as the binary can't read it from git
 version_file=Sources/tidal/Tidal.swift
@@ -53,19 +113,14 @@ cp "$binary" LICENSE README.md "$dist/tidal-$version/"
 COPYFILE_DISABLE=1 tar -czf "$archive" -C "$dist" "tidal-$version"
 checksum=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
 
-previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
 if ! git diff --quiet; then
 	git commit -q -m "Bump version to $version" -- "$version_file"
 fi
 git tag -a "$version" -m "$version"
 git push -q origin main "$version"
 
-if [[ -n $previous ]]; then
-	notes=$(git log --format='- %s' "$previous..$version" | grep -v "^- Bump version to ")
-else
-	notes="First release"
-fi
-gh release create "$version" "$archive" --title "$version" --notes "$notes" --verify-tag
+gh release create "$version" "$archive" --title "$version" --notes "$body" --verify-tag
+trash "$notes"
 
 sed -i '' -E \
 	-e "s|download/[^/]+/tidal-[^/]+-macos\.tar\.gz|download/$version/tidal-$version-macos.tar.gz|" \
