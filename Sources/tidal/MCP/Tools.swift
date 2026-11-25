@@ -195,6 +195,33 @@ let tools: [Tool] = [
 		annotations: Tool.Annotations(readOnlyHint: false, destructiveHint: true, idempotentHint: true)
 	),
 	Tool(
+		name: "backup_account",
+		title: "Back Up Account",
+		description: "Save the account's favorites and own playlists to a JSON file, to restore them with restore_account. Favorite playlists of others are kept as favorites, not with their items.",
+		inputSchema: schema([
+			"path": string("The file to write, replacing it if it exists")
+		], required: ["path"]),
+		// Replaces the file
+		annotations: destructive
+	),
+	Tool(
+		name: "restore_account",
+		title: "Restore Account",
+		description: """
+			Restore a file written by backup_account. Without override, it only adds: missing favorites and playlists, \
+			and the items a playlist is missing at its end. Playlists are found by UUID, or else by a title only one playlist has. \
+			Tracks whose ID Tidal no longer knows are replaced by another track of the same recording, the rest is listed as missing. \
+			Check what changes with dry_run first, especially with override.
+			""",
+		inputSchema: schema([
+			"path": string("The file"),
+			"override": boolean("Also remove favorites the backup doesn't have, and replace the title, description and items of playlists that differ"),
+			"delete_playlists": boolean("With override, also delete the account's playlists that the backup doesn't have"),
+			"dry_run": boolean("Only return what would change")
+		], required: ["path"]),
+		annotations: destructive
+	),
+	Tool(
 		name: "download",
 		title: "Download",
 		description: """
@@ -311,6 +338,26 @@ func callTool(_ name: String, arguments: ToolArguments, session: Session, progre
 			try await changeFavorite(session: session, link: link, isFavorite: isFavorite)
 		}
 		return "\(isFavorite ? "Added" : "Removed") \(links.count == 1 ? "1 item" : "\(links.count) items")"
+	case "backup_account":
+		let backup = try await createBackup(session: session)
+		return try jsonString(writeBackup(backup, to: arguments.string("path")))
+	case "restore_account":
+		let path = try arguments.string("path")
+		// Standard input carries the protocol
+		guard path != "-" else {
+			throw CLIError("path must be a file")
+		}
+		let backup = try readBackup(from: path)
+		let override = try arguments.bool("override")
+		let deletePlaylists = try arguments.bool("delete_playlists")
+		guard override || !deletePlaylists else {
+			throw CLIError("delete_playlists needs override")
+		}
+		let plan = try await restorePlan(session: session, backup: backup, options: AccountRestoreOptions(override: override, deletePlaylists: deletePlaylists))
+		if try arguments.bool("dry_run") {
+			return try jsonString(RestorePlanSummary(plan, session: session))
+		}
+		return try jsonString(await restore(session: session, plan: plan))
 	case "download":
 		let link = try TidalLink(reference: arguments.string("item"), kind: arguments.kind("type"))
 		let destination = try downloadFolder(path: arguments.optionalString("folder"), fallback: .downloadsDirectory)

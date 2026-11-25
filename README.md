@@ -1,6 +1,6 @@
 # TidalSwiftCLI
 
-`tidal`, a command line tool for Tidal: search, artist releases, new releases of your favorite artists, playlists, favorites, and downloads. It also runs as an MCP server, so AI assistants can use your Tidal account. Built on [TidalSwiftLib](https://github.com/melgu/TidalSwiftLib), the library behind the [TidalSwift](https://github.com/melgu/TidalSwift) app.
+`tidal`, a command line tool for Tidal: search, artist releases, new releases of your favorite artists, playlists, favorites, backup and restore of your account, and downloads. It also runs as an MCP server, so AI assistants can use your Tidal account. Built on [TidalSwiftLib](https://github.com/melgu/TidalSwiftLib), the library behind the [TidalSwift](https://github.com/melgu/TidalSwift) app.
 
 Requires macOS 14.
 
@@ -42,6 +42,7 @@ tidal playlists export <playlist> --out roadtrip.json
 tidal playlists import roadtrip.json                                    # as a new playlist
 tidal playlists import roadtrip.json --into <playlist> --override       # replaces its items
 tidal favorites add https://tidal.com/browse/album/123456
+tidal backup create --out tidal-backup.json                             # see Backup & Restore below
 tidal download https://tidal.com/browse/album/123456
 ```
 
@@ -51,9 +52,32 @@ The two logins get different qualities. The Dolby Atmos login gets High (FLAC 16
 
 
 
+## Backup & Restore
+
+`tidal backup create` saves your favorite tracks, videos, albums, artists and playlists, and all your own playlists with their items, to one JSON file. `tidal backup restore` brings them back, also into another account:
+
+```sh
+tidal backup create --out tidal-backup.json
+tidal backup restore tidal-backup.json --dry-run                        # shows what would change
+tidal backup restore tidal-backup.json                                  # adds what's missing
+tidal backup restore tidal-backup.json --override                       # also removes and replaces
+tidal backup restore tidal-backup.json --override --delete              # also deletes playlists not in the backup
+```
+
+- Without `--override`, a restore only adds: missing favorites, missing playlists, and the items a playlist is missing, at its end.
+- `--override` makes the account match the backup. It removes favorites the backup doesn't have and replaces the title, description and items of playlists that differ. Playlists the backup doesn't have are kept, unless `--delete` is given. It asks before removing anything, or takes `--yes`.
+- Playlists are found by their UUID, or else by their title if only one playlist has it, so restoring twice doesn't create them twice.
+- Favorites keep their order, but get the date of the restore, as Tidal sets it when adding.
+- Tracks whose ID Tidal no longer knows are replaced by another track of the same recording, found by their ISRC. What can't be found is listed as missing.
+- If Tidal rejects a change, the restore stops. Restoring again continues with what is still missing.
+
+Single playlists can be exported and imported the same way with `tidal playlists export` and `tidal playlists import`. Playlist folders aren't backed up yet.
+
+
+
 ## MCP Server
 
-`tidal mcp` runs an MCP server on stdin and stdout with tools for search, releases, playlists, favorites and downloads. If the account isn't logged in yet, it asks the client to show the login link. To add it to Claude Code for all projects:
+`tidal mcp` runs an MCP server on stdin and stdout with tools for search, releases, playlists, favorites, backups and downloads. If the account isn't logged in yet, it asks the client to show the login link. To add it to Claude Code for all projects:
 
 ```sh
 claude mcp add -s user tidal -- tidal mcp

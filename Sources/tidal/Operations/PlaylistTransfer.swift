@@ -58,7 +58,7 @@ func readExport(from path: String) throws -> PlaylistExport {
 	}
 }
 
-private func fileURL(_ path: String) -> URL {
+func fileURL(_ path: String) -> URL {
 	URL(filePath: (path as NSString).expandingTildeInPath, directoryHint: .notDirectory)
 }
 

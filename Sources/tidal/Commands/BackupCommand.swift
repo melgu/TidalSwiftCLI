@@ -1,0 +1,300 @@
+//
+//  BackupCommand.swift
+//  TidalSwiftCLI
+//
+//  Created by Melvin Gundlach on 25.11.26.
+//  Copyright © 2026 Melvin Gundlach. All rights reserved.
+//
+
+import ArgumentParser
+import Foundation
+import TidalSwiftLib
+
+struct BackupCommand: AsyncParsableCommand {
+	static let configuration = CommandConfiguration(
+		commandName: "backup",
+		abstract: "Back up the favorites and playlists of the account, and restore them.",
+		subcommands: [
+			Create.self,
+			Restore.self
+		]
+	)
+	
+	struct Create: AsyncParsableCommand {
+		static let configuration = CommandConfiguration(
+			abstract: "Save the favorites and your own playlists to a JSON file.",
+			discussion: "The file keeps the IDs of the favorites and playlist items, and their title, artists and ISRC to recognize them or find them again. Favorite playlists of others are kept as favorites, not with their items."
+		)
+		
+		@Option(name: [.customLong("out"), .short], help: "The file to write, replacing it if it exists. Without, the backup goes to standard output.")
+		var out: String?
+		
+		@OptionGroup var output: OutputOptions
+		
+		@MainActor
+		func run() async throws {
+			let session = try loggedInSession()
+			let progress: ((AccountBackupProgress) -> Void)? = showsProgress ? { printProgress($0) } : nil
+			let backup = try await createBackup(session: session, progress: progress)
+			guard let out else {
+				print(String(decoding: try backup.data(), as: UTF8.self))
+				return
+			}
+			let file = try writeBackup(backup, to: out)
+			if output.json {
+				try printJSON(file)
+			} else {
+				print("Backed up \(count(file.favorites, "favorite")) and \(count(file.playlists, "playlist")) (\(count(file.playlistItems, "item"))) to \(file.path)")
+			}
+		}
+		
+		private func printProgress(_ progress: AccountBackupProgress) {
+			switch progress {
+			case .loadingFavorites:
+				printToStderr("Loading the favorites")
+			case let .loadingPlaylist(title, number, total):
+				printToStderr("Loading playlist \(number) of \(total): \(title)")
+			}
+		}
+	}
+	
+	struct Restore: AsyncParsableCommand {
+		static let configuration = CommandConfiguration(
+			abstract: "Add the favorites and playlists of a backup that the account is missing.",
+			discussion: """
+				Without --override, nothing is removed: missing favorites and playlists are added, and playlists that still exist get the items they're missing at their end. \
+				Playlists are found by their UUID, or else by their title if only one playlist has it, so restoring again doesn't create them twice.
+
+				Favorites are added oldest first, so they keep their order, but they all get the date of the restore. \
+				Tracks whose ID Tidal no longer knows are replaced by another track of the same recording, found by their ISRC. What can't be found is listed as missing.
+
+				If Tidal rejects a change, the restore stops. Restoring again continues with what is still missing.
+				"""
+		)
+		
+		@Argument(help: "The file, or - for standard input.")
+		var file: String
+		
+		@Flag(help: "Make the account match the backup: also remove favorites the backup doesn't have, and replace the title, description and items of playlists that differ. Keeps playlists the backup doesn't have.")
+		var override = false
+		
+		@Flag(help: "With --override, also delete your playlists that the backup doesn't have.")
+		var delete = false
+		
+		@Flag(help: "Only show what would change.")
+		var dryRun = false
+		
+		@Flag(name: [.customLong("yes"), .short], help: "Don't ask before removing or replacing anything with --override.")
+		var yes = false
+		
+		@OptionGroup var output: OutputOptions
+		
+		func validate() throws {
+			if delete && !override {
+				throw ValidationError("--delete needs --override.")
+			}
+		}
+		
+		@MainActor
+		func run() async throws {
+			let backup = try readBackup(from: file)
+			let session = try loggedInSession()
+			if showsProgress {
+				printToStderr("Comparing the backup with the account")
+			}
+			let plan = try await restorePlan(session: session, backup: backup, options: AccountRestoreOptions(override: override, deletePlaylists: delete))
+			let summary = RestorePlanSummary(plan, session: session)
+			if dryRun {
+				if output.json {
+					try printJSON(summary)
+				} else {
+					summary.printLines()
+				}
+				return
+			}
+			// An empty plan changes nothing, but still gives the JSON of a restore
+			if summary.isEmpty && !output.json {
+				print("The account already has everything in the backup")
+				return
+			}
+			if !summary.isEmpty {
+				try confirm(summary)
+			}
+			let progress: ((AccountRestoreProgress) -> Void)? = showsProgress ? { printProgress($0) } : nil
+			let result = try await restore(session: session, plan: plan, progress: progress)
+			if output.json {
+				try printJSON(result)
+			} else {
+				result.printLines()
+			}
+		}
+		
+		/// Asks before removing or replacing anything, and before restoring another account's backup
+		private func confirm(_ summary: RestorePlanSummary) throws {
+			guard (summary.removesSomething || summary.otherAccount) && !yes else {
+				return
+			}
+			guard isatty(STDIN_FILENO) != 0, file != "-" else {
+				throw CLIError(summary.removesSomething
+					? "--override removes or replaces favorites and playlists. Check them with --dry-run, then pass --yes to confirm."
+					: "The backup is of another account. Pass --yes to restore it anyway.")
+			}
+			summary.printLines(to: printToStderr)
+			FileHandle.standardError.write(Data("\nRestore? [y/N] ".utf8))
+			guard let answer = readLine()?.trimmingCharacters(in: .whitespaces).lowercased(), ["y", "yes"].contains(answer) else {
+				throw CLIError("Nothing changed")
+			}
+		}
+		
+		private func printProgress(_ progress: AccountRestoreProgress) {
+			switch progress {
+			case let .restoringPlaylist(title, number, total):
+				printToStderr("Restoring playlist \(number) of \(total): \(title)")
+			case let .addingFavorites(kind, count):
+				printToStderr("Adding \(count) favorite \(kind.noun(count))")
+			case let .removingFavorites(kind, count):
+				printToStderr("Removing \(count) favorite \(kind.noun(count))")
+			}
+		}
+	}
+}
+
+/// Progress goes to stderr, but only to a terminal
+private var showsProgress: Bool {
+	isatty(STDERR_FILENO) != 0
+}
+
+private func count(_ count: Int, _ noun: String) -> String {
+	count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
+}
+
+extension FavoriteKind {
+	func noun(_ count: Int) -> String {
+		count == 1 ? String(rawValue.dropLast()) : rawValue
+	}
+}
+
+extension AccountBackup.AlbumEntry {
+	var line: String {
+		let title = version.map { "\(self.title) (\($0))" } ?? self.title
+		return "\(id)  \(title) – \(artists.joined(separator: ", "))"
+	}
+}
+
+extension AccountBackup.ArtistEntry {
+	var line: String {
+		"\(id)  \(name)"
+	}
+}
+
+extension AccountBackup.PlaylistEntry {
+	var line: String {
+		"\(uuid)  \(title)" + (creator.map { " (by \($0))" } ?? "")
+	}
+}
+
+extension RestorePlanSummary {
+	func printLines(to write: (String) -> Void = { print($0) }) {
+		if otherAccount {
+			write("The backup is of another account.")
+		}
+		write("Backup of \(backupDate.formatted(date: .abbreviated, time: .shortened))")
+		guard !isEmpty else {
+			write("The account already has everything in the backup")
+			return
+		}
+		
+		let sections: [(FavoriteKind, add: Int, remove: [String])] = [
+			(.tracks, favorites.tracks.add.count, favorites.tracks.remove.map(\.line)),
+			(.videos, favorites.videos.add.count, favorites.videos.remove.map(\.line)),
+			(.albums, favorites.albums.add.count, favorites.albums.remove.map(\.line)),
+			(.artists, favorites.artists.add.count, favorites.artists.remove.map(\.line)),
+			(.playlists, favorites.playlists.add.count, favorites.playlists.remove.map(\.line))
+		]
+		write("\nFavorites")
+		for (kind, add, remove) in sections {
+			var changes: [String] = []
+			if add > 0 {
+				changes.append("add \(add)")
+			}
+			if !remove.isEmpty {
+				changes.append("remove \(remove.count)")
+			}
+			write("  \(kind.rawValue.capitalized): \(changes.isEmpty ? "unchanged" : changes.joined(separator: ", "))")
+			remove.forEach { write("    − \($0)") }
+		}
+		
+		write("\nPlaylists")
+		let unchanged = playlists.filter { $0.action == .unchanged }.count
+		for playlist in playlists where playlist.action != .unchanged {
+			let details = switch playlist.action {
+			case .create: "create, \(count(playlist.items, "item"))"
+			case .append: "add \(count(playlist.missing ?? 0, "missing item"))"
+			case .replace: "replace with \(count(playlist.items, "item"))"
+			case .delete: "delete, \(count(playlist.items, "item"))"
+			case .unchanged: "unchanged"
+			}
+			write("  \(playlist.title): \(details)")
+		}
+		if unchanged > 0 {
+			write("  \(count(unchanged, "playlist")) unchanged")
+		}
+	}
+}
+
+extension RestoreSummary {
+	func printLines() {
+		let sections: [(FavoriteKind, added: Int, removed: Int, missing: [String])] = [
+			(.tracks, favorites.tracks.added + favorites.replacedTracks.count, favorites.tracks.removed, favorites.tracks.missing.map(\.line)),
+			(.videos, favorites.videos.added, favorites.videos.removed, favorites.videos.missing.map(\.line)),
+			(.albums, favorites.albums.added, favorites.albums.removed, favorites.albums.missing.map(\.line)),
+			(.artists, favorites.artists.added, favorites.artists.removed, favorites.artists.missing.map(\.line)),
+			(.playlists, favorites.playlists.added, favorites.playlists.removed, favorites.playlists.missing.map(\.line))
+		]
+		print("Favorites")
+		for (kind, added, removed, missing) in sections {
+			var changes: [String] = []
+			if added > 0 {
+				changes.append("added \(added)")
+			}
+			if removed > 0 {
+				changes.append("removed \(removed)")
+			}
+			print("  \(kind.rawValue.capitalized): \(changes.isEmpty ? "unchanged" : changes.joined(separator: ", "))")
+			if !missing.isEmpty {
+				print("    Missing, as Tidal no longer has them:")
+				missing.forEach { print("      \($0)") }
+			}
+		}
+		if !favorites.replacedTracks.isEmpty {
+			print("  Replaced by another track of the same recording, as Tidal no longer knows them:")
+			favorites.replacedTracks.forEach { print("    \($0.original.line)\n      → \($0.replacement.line)") }
+		}
+		
+		print("\nPlaylists")
+		for result in playlists {
+			let action = switch result.action {
+			case .create: "Created"
+			case .append: "Added to"
+			case .replace: "Replaced"
+			case .delete: "Deleted"
+			case .unchanged: "Unchanged"
+			}
+			print("  \(action) \(result.playlist?.line ?? result.title)")
+			if result.action != .delete {
+				print("    Added \(count(result.added + result.replaced.count, "item"))")
+			}
+			if !result.replaced.isEmpty {
+				print("    Replaced by another track of the same recording, as Tidal no longer knows them:")
+				result.replaced.forEach { print("      \($0.original.line)\n        → \($0.replacement.line)") }
+			}
+			if !result.missing.isEmpty {
+				print("    Missing, as Tidal no longer has them:")
+				result.missing.forEach { print("      \($0.line)") }
+			}
+		}
+		if unchangedPlaylists > 0 {
+			print("  \(count(unchangedPlaylists, "playlist")) unchanged")
+		}
+	}
+}

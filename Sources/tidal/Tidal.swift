@@ -26,6 +26,7 @@ struct Tidal: AsyncParsableCommand {
 			NewReleases.self,
 			Playlists.self,
 			Favorites.self,
+			BackupCommand.self,
 			DownloadCommand.self,
 			MCPCommand.self
 		]
