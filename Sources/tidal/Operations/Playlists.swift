@@ -136,15 +136,10 @@ func removeFromPlaylist(session: Session, reference: String, positions: [Int]) a
 		throw CLIError("\(playlist.title) has no position \(invalid). It has \(items.count) items.")
 	}
 	
-	// From the back, so earlier positions don't shift
-	var removed: [PlaylistItemSummary] = []
-	for position in positions.sorted(by: >) {
-		guard await session.playlistEditing.removeItem(atIndex: position - 1, from: playlist.uuid) else {
-			throw CLIError("Couldn't remove position \(position) from \(playlist.title)")
-		}
-		removed.insert(PlaylistItemSummary(items[position - 1]), at: 0)
+	guard await session.playlistEditing.removeItems(atIndices: positions.map { $0 - 1 }, from: playlist.uuid) else {
+		throw CLIError("Couldn't remove the items from \(playlist.title)")
 	}
-	return removed
+	return positions.sorted().map { PlaylistItemSummary(items[$0 - 1]) }
 }
 
 /// Positions start at 1. Returns the moved item.
