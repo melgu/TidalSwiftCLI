@@ -8,6 +8,7 @@
 
 import ArgumentParser
 import Foundation
+import TidalSwiftLib
 
 // One line per item, starting with the ID other commands take
 
@@ -98,6 +99,14 @@ extension PlaylistItemSummary {
 		case .track(let track): track.line
 		case .video(let video): video.playlistLine
 		}
+	}
+}
+
+extension PlaylistExport.Item {
+	var line: String {
+		let title = version.map { "\(self.title) (\($0))" } ?? self.title
+		let details = type == .video ? "video" : album ?? "track"
+		return "\(id)  \(title) – \(artists.joined(separator: ", ")) (\(details), \(formatDuration(duration)))"
 	}
 }
 

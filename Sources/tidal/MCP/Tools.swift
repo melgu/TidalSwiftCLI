@@ -143,6 +143,29 @@ let tools: [Tool] = [
 		annotations: additive
 	),
 	Tool(
+		name: "export_playlist",
+		title: "Export Playlist",
+		description: "Save any playlist to a JSON file, to back it up or import it with import_playlist. The file keeps the IDs of the tracks and videos, and their title, artists, album and ISRC.",
+		inputSchema: schema([
+			"playlist": string(playlistDescription),
+			"path": string("The file to write, replacing it if it exists")
+		], required: ["playlist", "path"]),
+		// Replaces the file
+		annotations: destructive
+	),
+	Tool(
+		name: "import_playlist",
+		title: "Import Playlist",
+		description: "Create a playlist from a file written by export_playlist, or add the file's items to one of the account's playlists. Tracks whose ID Tidal no longer knows are replaced by another track of the same recording, the rest is listed as missing.",
+		inputSchema: schema([
+			"path": string("The file"),
+			"into": string("One of the account's playlists to add the items to, instead of creating a new one. A link or UUID."),
+			"override": boolean("Replace the title, description and all items of the playlist given with into with those of the file"),
+			"allow_duplicates": boolean("With into, also add items that are in the playlist already")
+		], required: ["path"]),
+		annotations: destructive
+	),
+	Tool(
 		name: "list_favorites",
 		title: "List Favorites",
 		description: "The account's favorite tracks, albums, artists, playlists or videos.",
@@ -248,6 +271,32 @@ func callTool(_ name: String, arguments: ToolArguments, session: Session, progre
 		return try jsonString(await removeFromPlaylist(session: session, reference: arguments.string("playlist"), positions: arguments.ints("positions")))
 	case "move_in_playlist":
 		return try jsonString(await moveInPlaylist(session: session, reference: arguments.string("playlist"), from: arguments.int("from"), to: arguments.int("to")))
+	case "export_playlist":
+		let export = try await exportPlaylist(session: session, reference: arguments.string("playlist"))
+		return try jsonString(writeExport(export, to: arguments.string("path")))
+	case "import_playlist":
+		let path = try arguments.string("path")
+		// Standard input carries the protocol
+		guard path != "-" else {
+			throw CLIError("path must be a file")
+		}
+		let export = try readExport(from: path)
+		let into = try arguments.optionalString("into")
+		let override = try arguments.bool("override")
+		let allowDuplicates = try arguments.bool("allow_duplicates")
+		let target: PlaylistImportTarget
+		switch (into, override) {
+		case (nil, _):
+			guard !override && !allowDuplicates else {
+				throw CLIError("override and allow_duplicates need into")
+			}
+			target = .new
+		case let (playlist?, true):
+			target = .replace(playlist: playlist)
+		case let (playlist?, false):
+			target = .append(playlist: playlist, allowDuplicates: allowDuplicates)
+		}
+		return try jsonString(await importPlaylist(session: session, export: export, target: target))
 	case "list_favorites":
 		guard let kind = try arguments.kind("type") else {
 			throw CLIError("Missing argument type")

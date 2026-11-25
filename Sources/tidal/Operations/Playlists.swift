@@ -162,7 +162,7 @@ func moveInPlaylist(session: Session, reference: String, from: Int, to: Int) asy
 }
 
 @MainActor
-private func ownPlaylist(reference: String, session: Session) async throws -> Playlist {
+func ownPlaylist(reference: String, session: Session) async throws -> Playlist {
 	let playlist = try await loadPlaylist(reference: reference, session: session)
 	guard playlist.creator.id == session.userId else {
 		throw CLIError("\(playlist.title) belongs to someone else, so it can't be changed")

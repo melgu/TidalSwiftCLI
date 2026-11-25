@@ -38,6 +38,9 @@ tidal search "Jacob Collier"
 tidal artist https://tidal.com/browse/artist/123456 --type eps-and-singles
 tidal new-releases --include-eps-and-singles
 tidal playlists list
+tidal playlists export <playlist> --out roadtrip.json
+tidal playlists import roadtrip.json                                    # as a new playlist
+tidal playlists import roadtrip.json --into <playlist> --override       # replaces its items
 tidal favorites add https://tidal.com/browse/album/123456
 tidal download https://tidal.com/browse/album/123456
 ```
