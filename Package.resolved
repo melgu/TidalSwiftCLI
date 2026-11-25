@@ -1,5 +1,5 @@
 {
-  "originHash" : "4c2063c3afd145f3bdf880d716f89020e9a52b9ad4dcf605b7c646ef01cb507f",
+  "originHash" : "5ed225f850ed591a2df9b9a9a623315f1fdbce1eb569e8d4c0433503e3dd4b7e",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -78,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/melgu/TidalSwiftLib",
       "state" : {
-        "revision" : "95f9293d680d59caff828b280f5bbe9cccfeb7bb",
-        "version" : "0.4.1"
+        "revision" : "a84bb0fdefaeaed7bdd59d4617ce71d2c390202e",
+        "version" : "0.4.2"
       }
     }
   ],
