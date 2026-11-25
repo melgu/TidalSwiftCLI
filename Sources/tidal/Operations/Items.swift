@@ -50,6 +50,7 @@ struct PlaylistSummary: Codable {
 	let title: String
 	let creator: String?
 	let numberOfTracks: Int
+	let numberOfVideos: Int
 	let description: String?
 	/// Only the account's own playlists can be edited
 	let isOwn: Bool
@@ -63,6 +64,28 @@ struct VideoSummary: Codable {
 	/// In seconds
 	let duration: Int
 	let url: URL
+}
+
+/// A track or video in a playlist. Encoded as the track or video with a `type` of "track" or "video".
+enum PlaylistItemSummary: Encodable {
+	case track(TrackSummary)
+	case video(VideoSummary)
+	
+	private enum CodingKeys: String, CodingKey {
+		case type
+	}
+	
+	func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+		switch self {
+		case .track(let track):
+			try container.encode("track", forKey: .type)
+			try track.encode(to: encoder)
+		case .video(let video):
+			try container.encode("video", forKey: .type)
+			try video.encode(to: encoder)
+		}
+	}
 }
 
 extension TrackSummary {
@@ -114,6 +137,7 @@ extension PlaylistSummary {
 			title: playlist.title,
 			creator: playlist.creator.name,
 			numberOfTracks: playlist.numberOfTracks,
+			numberOfVideos: playlist.numberOfVideos,
 			description: playlist.description.flatMap { $0.isEmpty ? nil : $0 },
 			isOwn: playlist.creator.id == session.userId,
 			url: playlist.url
@@ -131,5 +155,17 @@ extension VideoSummary {
 			duration: video.duration,
 			url: URL(string: "https://tidal.com/browse/video/\(video.id)")!
 		)
+	}
+}
+
+extension PlaylistItemSummary {
+	@MainActor
+	init(_ item: PlaylistItem) {
+		switch item {
+		case .track(let track):
+			self = .track(TrackSummary(track))
+		case .video(let video):
+			self = .video(VideoSummary(video))
+		}
 	}
 }

@@ -48,7 +48,7 @@ struct Playlists: AsyncParsableCommand {
 	
 	struct Show: AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
-			abstract: "Show a playlist and its tracks, with the positions remove and move take."
+			abstract: "Show a playlist and its tracks and videos, with the positions remove and move take."
 		)
 		
 		@Argument(help: "The playlist.")
@@ -73,7 +73,7 @@ struct Playlists: AsyncParsableCommand {
 			let width = String(details.items.count).count
 			for item in details.items {
 				let position = String(repeating: " ", count: width - String(item.position).count) + String(item.position)
-				print("\(position)  \(item.track.line)")
+				print("\(position)  \(item.line)")
 			}
 		}
 	}
@@ -161,19 +161,19 @@ struct Playlists: AsyncParsableCommand {
 	
 	struct Add: AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
-			abstract: "Add tracks to one of your playlists. Albums and playlists add all their tracks."
+			abstract: "Add tracks and videos to one of your playlists. Albums and playlists add all their items."
 		)
 		
 		@Argument(help: "The playlist to add to.")
 		var playlist: String
 		
-		@Argument(help: "Tracks, albums or playlists, as links or IDs.")
+		@Argument(help: "Tracks, videos, albums or playlists, as links or IDs.")
 		var items: [String]
 		
 		@Option(name: [.customLong("type"), .short], help: "What the IDs are, if not links.")
 		var type: ItemKind?
 		
-		@Flag(help: "Add tracks that are in the playlist already.")
+		@Flag(help: "Add items that are in the playlist already.")
 		var allowDuplicates = false
 		
 		@OptionGroup var output: OutputOptions

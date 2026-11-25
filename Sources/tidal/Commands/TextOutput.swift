@@ -69,6 +69,9 @@ extension ArtistSummary {
 extension PlaylistSummary {
 	var line: String {
 		var details = [numberOfTracks == 1 ? "1 track" : "\(numberOfTracks) tracks"]
+		if numberOfVideos > 0 {
+			details.append(numberOfVideos == 1 ? "1 video" : "\(numberOfVideos) videos")
+		}
 		if isOwn {
 			details.append("yours")
 		} else if let creator, !creator.isEmpty {
@@ -81,6 +84,26 @@ extension PlaylistSummary {
 extension VideoSummary {
 	var line: String {
 		"\(id)  \(title) – \(artists) (\(formatDuration(duration)))"
+	}
+	
+	/// Says it's a video, among the tracks of a playlist
+	var playlistLine: String {
+		"\(id)  \(title) – \(artists) (video, \(formatDuration(duration)))"
+	}
+}
+
+extension PlaylistItemSummary {
+	var line: String {
+		switch self {
+		case .track(let track): track.line
+		case .video(let video): video.playlistLine
+		}
+	}
+}
+
+extension PlaylistDetails.Item {
+	var line: String {
+		track?.line ?? video?.playlistLine ?? ""
 	}
 }
 

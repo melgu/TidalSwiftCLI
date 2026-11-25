@@ -73,7 +73,7 @@ let tools: [Tool] = [
 	Tool(
 		name: "show_playlist",
 		title: "Show Playlist",
-		description: "A playlist and its tracks, with the positions remove_from_playlist and move_in_playlist take.",
+		description: "A playlist and its tracks and videos, with the positions remove_from_playlist and move_in_playlist take.",
 		inputSchema: schema([
 			"playlist": string(playlistDescription)
 		], required: ["playlist"]),
@@ -112,12 +112,12 @@ let tools: [Tool] = [
 	Tool(
 		name: "add_to_playlist",
 		title: "Add to Playlist",
-		description: "Add tracks to one of the account's playlists. Albums and playlists add all their tracks. Tracks in the playlist already are skipped and listed as such.",
+		description: "Add tracks and videos to one of the account's playlists. Albums and playlists add all their items. Items in the playlist already are skipped and listed as such.",
 		inputSchema: schema([
 			"playlist": string(playlistDescription),
-			"items": array(string("A track, album or playlist")),
+			"items": array(string("A track, video, album or playlist")),
 			"type": kindProperty(typeDescription),
-			"allow_duplicates": boolean("Add tracks that are in the playlist already")
+			"allow_duplicates": boolean("Add items that are in the playlist already")
 		], required: ["playlist", "items"]),
 		annotations: additive
 	),

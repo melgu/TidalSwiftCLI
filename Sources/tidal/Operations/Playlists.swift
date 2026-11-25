@@ -10,10 +10,12 @@ import Foundation
 import TidalSwiftLib
 
 struct PlaylistDetails: Codable {
+	/// Has either a track or a video
 	struct Item: Codable {
 		/// Starts at 1, as used by remove and move
 		let position: Int
-		let track: TrackSummary
+		let track: TrackSummary?
+		let video: VideoSummary?
 	}
 	
 	let playlist: PlaylistSummary
@@ -33,13 +35,25 @@ func playlists(session: Session, ownOnly: Bool) async throws -> [PlaylistSummary
 @MainActor
 func playlistDetails(session: Session, reference: String) async throws -> PlaylistDetails {
 	let playlist = try await loadPlaylist(reference: reference, session: session)
-	guard let tracks = await session.playlistTracks(playlistId: playlist.uuid) else {
-		throw CLIError("Couldn't load the tracks of \(playlist.title)")
-	}
+	let items = try await playlistItems(of: playlist, session: session)
 	return PlaylistDetails(
 		playlist: PlaylistSummary(playlist, session: session),
-		items: tracks.enumerated().map { PlaylistDetails.Item(position: $0.offset + 1, track: TrackSummary($0.element)) }
+		items: items.enumerated().map { position, item in
+			PlaylistDetails.Item(
+				position: position + 1,
+				track: item.track.map(TrackSummary.init),
+				video: item.video.map(VideoSummary.init)
+			)
+		}
 	)
+}
+
+@MainActor
+private func playlistItems(of playlist: Playlist, session: Session) async throws -> [PlaylistItem] {
+	guard let items = await session.playlistItems(playlistId: playlist.uuid) else {
+		throw CLIError("Couldn't load the items of \(playlist.title)")
+	}
+	return items
 }
 
 @MainActor
@@ -73,84 +87,78 @@ func deletePlaylist(session: Session, reference: String) async throws -> Playlis
 	return PlaylistSummary(playlist, session: session)
 }
 
-struct PlaylistAddition: Codable {
-	let added: [TrackSummary]
+struct PlaylistAddition: Encodable {
+	let added: [PlaylistItemSummary]
 	/// In the playlist already, or given twice
-	let skipped: [TrackSummary]
+	let skipped: [PlaylistItemSummary]
 }
 
-/// Adds tracks, or every track of albums and playlists
+/// Adds tracks and videos, or every item of albums and playlists
 @MainActor
 func addToPlaylist(session: Session, reference: String, items: [String], kind: ItemKind?, allowDuplicates: Bool) async throws -> PlaylistAddition {
 	let playlist = try await ownPlaylist(reference: reference, session: session)
-	var tracks: [Track] = []
+	var additions: [PlaylistItem] = []
 	for item in items {
-		tracks += try await resolveTracks(of: TidalLink(reference: item, kind: kind), session: session)
+		additions += try await resolvePlaylistItems(of: TidalLink(reference: item, kind: kind), session: session)
 	}
 	
 	// Tidal skips duplicates without saying so, so they're filtered here to report them
-	var skipped: [Track] = []
+	var skipped: [PlaylistItem] = []
 	if !allowDuplicates {
-		guard let existing = await session.playlistTracks(playlistId: playlist.uuid) else {
-			throw CLIError("Couldn't load the tracks of \(playlist.title)")
-		}
-		var seen = Set(existing.map(\.id))
-		let all = tracks
-		tracks = []
-		for track in all {
-			if seen.insert(track.id).inserted {
-				tracks.append(track)
+		let existing = try await playlistItems(of: playlist, session: session)
+		var seen = Set(existing.map(\.mediaId))
+		let all = additions
+		additions = []
+		for item in all {
+			if seen.insert(item.mediaId).inserted {
+				additions.append(item)
 			} else {
-				skipped.append(track)
+				skipped.append(item)
 			}
 		}
 	}
 	
-	if !tracks.isEmpty {
-		guard await session.playlistEditing.addTracks(tracks.map(\.id), to: playlist.uuid, duplicate: allowDuplicates) else {
-			throw CLIError("Couldn't add the tracks to \(playlist.title)")
+	if !additions.isEmpty {
+		guard await session.playlistEditing.addTracks(additions.map(\.mediaId), to: playlist.uuid, duplicate: allowDuplicates) else {
+			throw CLIError("Couldn't add the items to \(playlist.title)")
 		}
 	}
-	return PlaylistAddition(added: tracks.map(TrackSummary.init), skipped: skipped.map(TrackSummary.init))
+	return PlaylistAddition(added: additions.map(PlaylistItemSummary.init), skipped: skipped.map(PlaylistItemSummary.init))
 }
 
-/// Removes the items at the given positions, which start at 1. Returns the removed tracks.
+/// Removes the items at the given positions, which start at 1. Returns the removed items.
 @MainActor
-func removeFromPlaylist(session: Session, reference: String, positions: [Int]) async throws -> [TrackSummary] {
+func removeFromPlaylist(session: Session, reference: String, positions: [Int]) async throws -> [PlaylistItemSummary] {
 	let playlist = try await ownPlaylist(reference: reference, session: session)
-	guard let tracks = await session.playlistTracks(playlistId: playlist.uuid) else {
-		throw CLIError("Couldn't load the tracks of \(playlist.title)")
-	}
+	let items = try await playlistItems(of: playlist, session: session)
 	let positions = Set(positions)
-	if let invalid = positions.first(where: { !tracks.indices.contains($0 - 1) }) {
-		throw CLIError("\(playlist.title) has no position \(invalid). It has \(tracks.count) items.")
+	if let invalid = positions.first(where: { !items.indices.contains($0 - 1) }) {
+		throw CLIError("\(playlist.title) has no position \(invalid). It has \(items.count) items.")
 	}
 	
 	// From the back, so earlier positions don't shift
-	var removed: [TrackSummary] = []
+	var removed: [PlaylistItemSummary] = []
 	for position in positions.sorted(by: >) {
 		guard await session.playlistEditing.removeItem(atIndex: position - 1, from: playlist.uuid) else {
 			throw CLIError("Couldn't remove position \(position) from \(playlist.title)")
 		}
-		removed.insert(TrackSummary(tracks[position - 1]), at: 0)
+		removed.insert(PlaylistItemSummary(items[position - 1]), at: 0)
 	}
 	return removed
 }
 
-/// Positions start at 1. Returns the moved track.
+/// Positions start at 1. Returns the moved item.
 @MainActor
-func moveInPlaylist(session: Session, reference: String, from: Int, to: Int) async throws -> TrackSummary {
+func moveInPlaylist(session: Session, reference: String, from: Int, to: Int) async throws -> PlaylistItemSummary {
 	let playlist = try await ownPlaylist(reference: reference, session: session)
-	guard let tracks = await session.playlistTracks(playlistId: playlist.uuid) else {
-		throw CLIError("Couldn't load the tracks of \(playlist.title)")
-	}
-	for position in [from, to] where !tracks.indices.contains(position - 1) {
-		throw CLIError("\(playlist.title) has no position \(position). It has \(tracks.count) items.")
+	let items = try await playlistItems(of: playlist, session: session)
+	for position in [from, to] where !items.indices.contains(position - 1) {
+		throw CLIError("\(playlist.title) has no position \(position). It has \(items.count) items.")
 	}
 	guard await session.playlistEditing.moveItem(fromIndex: from - 1, toIndex: to - 1, in: playlist.uuid) else {
 		throw CLIError("Couldn't move position \(from) in \(playlist.title)")
 	}
-	return TrackSummary(tracks[from - 1])
+	return PlaylistItemSummary(items[from - 1])
 }
 
 @MainActor
@@ -162,26 +170,31 @@ private func ownPlaylist(reference: String, session: Session) async throws -> Pl
 	return playlist
 }
 
-/// A track itself, or the tracks of an album or playlist
+/// A track or video itself, the tracks of an album, or the items of a playlist
 @MainActor
-func resolveTracks(of link: TidalLink, session: Session) async throws -> [Track] {
+func resolvePlaylistItems(of link: TidalLink, session: Session) async throws -> [PlaylistItem] {
 	switch link {
 	case .track(let id):
 		guard let track = await session.track(trackId: id) else {
 			throw CLIError("Couldn't load track \(id)")
 		}
-		return [track]
+		return [.track(track)]
+	case .video(let id):
+		guard let video = await session.video(videoId: id) else {
+			throw CLIError("Couldn't load video \(id)")
+		}
+		return [.video(video)]
 	case .album(let id):
 		guard let tracks = await session.albumTracks(albumId: id) else {
 			throw CLIError("Couldn't load the tracks of album \(id)")
 		}
-		return tracks
+		return tracks.map(PlaylistItem.track)
 	case .playlist(let uuid):
-		guard let tracks = await session.playlistTracks(playlistId: uuid) else {
-			throw CLIError("Couldn't load the tracks of playlist \(uuid)")
+		guard let items = await session.playlistItems(playlistId: uuid) else {
+			throw CLIError("Couldn't load the items of playlist \(uuid)")
 		}
-		return tracks
-	case .artist, .video:
-		throw CLIError("Only tracks, albums and playlists can be added to a playlist")
+		return items
+	case .artist:
+		throw CLIError("Only tracks, videos, albums and playlists can be added to a playlist")
 	}
 }
