@@ -54,24 +54,24 @@ The two logins get different qualities. The Dolby Atmos login gets High (FLAC 16
 
 ## Backup & Restore
 
-`tidal backup create` saves your favorite tracks, videos, albums, artists and playlists, and all your own playlists with their items, to one JSON file. `tidal backup restore` brings them back, also into another account:
+`tidal backup create` saves your favorite tracks, videos, albums, artists, playlists and mixes, all your own playlists with their items and whether they're public, the folders of your playlists, and the artists, tracks and videos you blocked to one JSON file. `tidal backup restore` brings them back, also into another account:
 
 ```sh
 tidal backup create --out tidal-backup.json
 tidal backup restore tidal-backup.json --dry-run                        # shows what would change
 tidal backup restore tidal-backup.json                                  # adds what's missing
-tidal backup restore tidal-backup.json --override                       # also removes and replaces
-tidal backup restore tidal-backup.json --override --delete              # also deletes playlists not in the backup
+tidal backup restore tidal-backup.json --override                       # also removes, replaces and moves
+tidal backup restore tidal-backup.json --override --delete              # also deletes playlists and folders not in the backup
 ```
 
-- Without `--override`, a restore only adds: missing favorites, missing playlists, and the items a playlist is missing, at its end.
-- `--override` makes the account match the backup. It removes favorites the backup doesn't have and replaces the title, description and items of playlists that differ. Playlists the backup doesn't have are kept, unless `--delete` is given. It asks before removing anything, or takes `--yes`.
-- Playlists are found by their UUID, or else by their title if only one playlist has it, so restoring twice doesn't create them twice.
-- Favorites keep their order, but get the date of the restore, as Tidal sets it when adding.
+- Without `--override`, a restore only adds: missing favorites, missing playlists, the items a playlist is missing, at its end, missing folders and missing blocks. Playlists and folders at the root are put into their folder.
+- `--override` makes the account match the backup. It removes favorites the backup doesn't have, replaces the title, description, visibility and items of playlists that differ, renames folders, moves folders and playlists to where the backup has them, and unblocks what the backup doesn't block. Playlists and folders the backup doesn't have are kept, unless `--delete` is given, which moves the contents of a deleted folder to the root. It asks before removing anything, or takes `--yes`.
+- Playlists are found by their UUID, or else by their title if only one playlist has it, and folders by their ID or their name within their parent, so restoring twice doesn't create them twice.
+- Favorites get the date they were added before. Mixes keep their order, but get the date of the restore, as Tidal can't set theirs.
 - Tracks whose ID Tidal no longer knows are replaced by another track of the same recording, found by their ISRC. What can't be found is listed as missing.
 - If Tidal rejects a change, the restore stops. Restoring again continues with what is still missing.
 
-Single playlists can be exported and imported the same way with `tidal playlists export` and `tidal playlists import`. Playlist folders aren't backed up yet.
+Single playlists can be exported and imported the same way with `tidal playlists export` and `tidal playlists import`.
 
 
 

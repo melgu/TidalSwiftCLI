@@ -197,7 +197,7 @@ let tools: [Tool] = [
 	Tool(
 		name: "backup_account",
 		title: "Back Up Account",
-		description: "Save the account's favorites and own playlists to a JSON file, to restore them with restore_account. Favorite playlists of others are kept as favorites, not with their items.",
+		description: "Save the account's favorites, including mixes, its own playlists, the folders of its playlists and its blocked artists, tracks and videos to a JSON file, to restore them with restore_account. Favorite playlists of others are kept as favorites, not with their items.",
 		inputSchema: schema([
 			"path": string("The file to write, replacing it if it exists")
 		], required: ["path"]),
@@ -209,14 +209,16 @@ let tools: [Tool] = [
 		title: "Restore Account",
 		description: """
 			Restore a file written by backup_account. Without override, it only adds: missing favorites and playlists, \
-			and the items a playlist is missing at its end. Playlists are found by UUID, or else by a title only one playlist has. \
+			the items a playlist is missing at its end, missing folders and missing blocks, and puts playlists and folders at the root into their folder. \
+			Favorites get the date of the backup again, apart from mixes. \
+			Playlists are found by UUID, or else by a title only one playlist has, folders by ID or their name within their parent. \
 			Tracks whose ID Tidal no longer knows are replaced by another track of the same recording, the rest is listed as missing. \
 			Check what changes with dry_run first, especially with override.
 			""",
 		inputSchema: schema([
 			"path": string("The file"),
-			"override": boolean("Also remove favorites the backup doesn't have, and replace the title, description and items of playlists that differ"),
-			"delete_playlists": boolean("With override, also delete the account's playlists that the backup doesn't have"),
+			"override": boolean("Also remove favorites the backup doesn't have, replace the title, description, visibility and items of playlists that differ, rename folders, move folders and playlists to where the backup has them, and unblock what the backup doesn't block"),
+			"delete_playlists": boolean("With override, also delete the account's playlists and folders that the backup doesn't have. The contents of a deleted folder are moved to the root."),
 			"dry_run": boolean("Only return what would change")
 		], required: ["path"]),
 		annotations: destructive

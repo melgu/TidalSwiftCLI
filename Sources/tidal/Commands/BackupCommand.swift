@@ -22,8 +22,8 @@ struct BackupCommand: AsyncParsableCommand {
 	
 	struct Create: AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
-			abstract: "Save the favorites and your own playlists to a JSON file.",
-			discussion: "The file keeps the IDs of the favorites and playlist items, and their title, artists and ISRC to recognize them or find them again. Favorite playlists of others are kept as favorites, not with their items."
+			abstract: "Save the favorites, your own playlists and their folders to a JSON file.",
+			discussion: "The file keeps the IDs of the favorites and playlist items, with the date they were added, and their title, artists and ISRC to recognize them or find them again. Favorite playlists of others are kept as favorites, not with their items. Favorite mixes, the folders of the playlists, whether a playlist is public, and the blocked artists, tracks and videos are kept as well."
 		)
 		
 		@Option(name: [.customLong("out"), .short], help: "The file to write, replacing it if it exists. Without, the backup goes to standard output.")
@@ -44,7 +44,7 @@ struct BackupCommand: AsyncParsableCommand {
 			if output.json {
 				try printJSON(file)
 			} else {
-				print("Backed up \(count(file.favorites, "favorite")) and \(count(file.playlists, "playlist")) (\(count(file.playlistItems, "item"))) to \(file.path)")
+				print("Backed up \(count(file.favorites, "favorite")), \(count(file.playlists, "playlist")) (\(count(file.playlistItems, "item"))), \(count(file.folders, "folder")) and \(count(file.blocks, "block")) to \(file.path)")
 			}
 		}
 		
@@ -52,6 +52,8 @@ struct BackupCommand: AsyncParsableCommand {
 			switch progress {
 			case .loadingFavorites:
 				printToStderr("Loading the favorites")
+			case .loadingFolders:
+				printToStderr("Loading the folders")
 			case let .loadingPlaylist(title, number, total):
 				printToStderr("Loading playlist \(number) of \(total): \(title)")
 			}
@@ -60,12 +62,14 @@ struct BackupCommand: AsyncParsableCommand {
 	
 	struct Restore: AsyncParsableCommand {
 		static let configuration = CommandConfiguration(
-			abstract: "Add the favorites and playlists of a backup that the account is missing.",
+			abstract: "Add the favorites, playlists, folders and blocks of a backup that the account is missing.",
 			discussion: """
-				Without --override, nothing is removed: missing favorites and playlists are added, and playlists that still exist get the items they're missing at their end. \
-				Playlists are found by their UUID, or else by their title if only one playlist has it, so restoring again doesn't create them twice.
+				Without --override, nothing is removed: missing favorites, playlists, folders and blocks are added, playlists that still exist get the items they're missing at their end, \
+				and playlists and folders at the root are put into their folder. \
+				Playlists are found by their UUID, or else by their title if only one playlist has it, and folders by their ID or their name within their parent, \
+				so restoring again doesn't create them twice.
 
-				Favorites are added oldest first, so they keep their order, but they all get the date of the restore. \
+				Favorites get the date they were added before, apart from mixes, which are added oldest first, so they keep their order. \
 				Tracks whose ID Tidal no longer knows are replaced by another track of the same recording, found by their ISRC. What can't be found is listed as missing.
 
 				If Tidal rejects a change, the restore stops. Restoring again continues with what is still missing.
@@ -75,10 +79,10 @@ struct BackupCommand: AsyncParsableCommand {
 		@Argument(help: "The file, or - for standard input.")
 		var file: String
 		
-		@Flag(help: "Make the account match the backup: also remove favorites the backup doesn't have, and replace the title, description and items of playlists that differ. Keeps playlists the backup doesn't have.")
+		@Flag(help: "Make the account match the backup: also remove favorites the backup doesn't have, replace the title, description, visibility and items of playlists that differ, rename folders, move folders and playlists to where the backup has them, and unblock what the backup doesn't block. Keeps playlists and folders the backup doesn't have.")
 		var override = false
 		
-		@Flag(help: "With --override, also delete your playlists that the backup doesn't have.")
+		@Flag(help: "With --override, also delete your playlists and folders that the backup doesn't have. The contents of a deleted folder are moved to the root.")
 		var delete = false
 		
 		@Flag(help: "Only show what would change.")
@@ -136,7 +140,7 @@ struct BackupCommand: AsyncParsableCommand {
 			}
 			guard isatty(STDIN_FILENO) != 0, file != "-" else {
 				throw CLIError(summary.removesSomething
-					? "--override removes or replaces favorites and playlists. Check them with --dry-run, then pass --yes to confirm."
+					? "--override removes or replaces favorites, playlists and folders. Check them with --dry-run, then pass --yes to confirm."
 					: "The backup is of another account. Pass --yes to restore it anyway.")
 			}
 			summary.printLines(to: printToStderr)
@@ -154,6 +158,12 @@ struct BackupCommand: AsyncParsableCommand {
 				printToStderr("Adding \(count) favorite \(kind.noun(count))")
 			case let .removingFavorites(kind, count):
 				printToStderr("Removing \(count) favorite \(kind.noun(count))")
+			case .restoringFolders:
+				printToStderr("Restoring the folders")
+			case let .blocking(kind, count):
+				printToStderr("Blocking \(count) \(kind.noun(count))")
+			case let .unblocking(kind, count):
+				printToStderr("Unblocking \(count) \(kind.noun(count))")
 			}
 		}
 	}
@@ -170,7 +180,28 @@ private func count(_ count: Int, _ noun: String) -> String {
 
 extension FavoriteKind {
 	func noun(_ count: Int) -> String {
+		guard count == 1 else {
+			return rawValue
+		}
+		return self == .mixes ? "mix" : String(rawValue.dropLast())
+	}
+}
+
+extension BlockKind {
+	func noun(_ count: Int) -> String {
 		count == 1 ? String(rawValue.dropLast()) : rawValue
+	}
+}
+
+extension AccountBackup.MixEntry {
+	var line: String {
+		"\(id)  \(title)" + (subTitle.map { " – \($0)" } ?? "")
+	}
+}
+
+extension RestorePlanSummary.FolderMove {
+	var line: String {
+		"\(kind == .folder ? "Folder " : "")\(title) → \(folder ?? "root")"
 	}
 }
 
@@ -209,7 +240,8 @@ extension RestorePlanSummary {
 			(.videos, favorites.videos.add.count, favorites.videos.remove.map(\.line)),
 			(.albums, favorites.albums.add.count, favorites.albums.remove.map(\.line)),
 			(.artists, favorites.artists.add.count, favorites.artists.remove.map(\.line)),
-			(.playlists, favorites.playlists.add.count, favorites.playlists.remove.map(\.line))
+			(.playlists, favorites.playlists.add.count, favorites.playlists.remove.map(\.line)),
+			(.mixes, favorites.mixes.add.count, favorites.mixes.remove.map(\.line))
 		]
 		write("\nFavorites")
 		for (kind, add, remove) in sections {
@@ -239,6 +271,42 @@ extension RestorePlanSummary {
 		if unchanged > 0 {
 			write("  \(count(unchanged, "playlist")) unchanged")
 		}
+		
+		write("\nBlocked")
+		if let blocks {
+			let sections: [(BlockKind, add: Int, remove: [String])] = [
+				(.artists, blocks.artists.add.count, blocks.artists.remove.map(\.line)),
+				(.tracks, blocks.tracks.add.count, blocks.tracks.remove.map(\.line)),
+				(.videos, blocks.videos.add.count, blocks.videos.remove.map(\.line))
+			]
+			for (kind, add, remove) in sections {
+				var changes: [String] = []
+				if add > 0 {
+					changes.append("block \(add)")
+				}
+				if !remove.isEmpty {
+					changes.append("unblock \(remove.count)")
+				}
+				write("  \(kind.rawValue.capitalized): \(changes.isEmpty ? "unchanged" : changes.joined(separator: ", "))")
+				remove.forEach { write("    − \($0)") }
+			}
+		} else {
+			write("  Not in the backup, left as they are")
+		}
+		
+		write("\nFolders")
+		guard let folders else {
+			write("  Not in the backup, left as they are")
+			return
+		}
+		guard !folders.isEmpty else {
+			write("  unchanged")
+			return
+		}
+		folders.create.forEach { write("  Create \($0)") }
+		folders.rename.forEach { write("  Rename \($0.from) to \($0.to)") }
+		folders.move.forEach { write("  Move \($0.line)") }
+		folders.delete.forEach { write("  Delete \($0), moving what's in it to the root") }
 	}
 }
 
@@ -249,7 +317,8 @@ extension RestoreSummary {
 			(.videos, favorites.videos.added, favorites.videos.removed, favorites.videos.missing.map(\.line)),
 			(.albums, favorites.albums.added, favorites.albums.removed, favorites.albums.missing.map(\.line)),
 			(.artists, favorites.artists.added, favorites.artists.removed, favorites.artists.missing.map(\.line)),
-			(.playlists, favorites.playlists.added, favorites.playlists.removed, favorites.playlists.missing.map(\.line))
+			(.playlists, favorites.playlists.added, favorites.playlists.removed, favorites.playlists.missing.map(\.line)),
+			(.mixes, favorites.mixes.added, favorites.mixes.removed, favorites.mixes.missing.map(\.line))
 		]
 		print("Favorites")
 		for (kind, added, removed, missing) in sections {
@@ -295,6 +364,42 @@ extension RestoreSummary {
 		}
 		if unchangedPlaylists > 0 {
 			print("  \(count(unchangedPlaylists, "playlist")) unchanged")
+		}
+		
+		let blockSections: [(BlockKind, added: Int, removed: Int, missing: [String])] = [
+			(.artists, blocks.artists.added, blocks.artists.removed, blocks.artists.missing.map(\.line)),
+			(.tracks, blocks.tracks.added, blocks.tracks.removed, blocks.tracks.missing.map(\.line)),
+			(.videos, blocks.videos.added, blocks.videos.removed, blocks.videos.missing.map(\.line))
+		]
+		if blockSections.contains(where: { $0.added > 0 || $0.removed > 0 || !$0.missing.isEmpty }) {
+			print("\nBlocked")
+			for (kind, added, removed, missing) in blockSections {
+				var changes: [String] = []
+				if added > 0 {
+					changes.append("blocked \(added)")
+				}
+				if removed > 0 {
+					changes.append("unblocked \(removed)")
+				}
+				print("  \(kind.rawValue.capitalized): \(changes.isEmpty ? "unchanged" : changes.joined(separator: ", "))")
+				if !missing.isEmpty {
+					print("    Missing, as Tidal no longer has them:")
+					missing.forEach { print("      \($0)") }
+				}
+			}
+		}
+		
+		guard !folders.isEmpty else {
+			return
+		}
+		print("\nFolders")
+		folders.created.forEach { print("  Created \($0)") }
+		folders.renamed.forEach { print("  Renamed \($0.from) to \($0.to)") }
+		folders.moved.forEach { print("  Moved \($0.line)") }
+		folders.deleted.forEach { print("  Deleted \($0)") }
+		if !folders.skipped.isEmpty {
+			print("  Not moved, as Tidal no longer has the playlist or the folder would be inside itself:")
+			folders.skipped.forEach { print("    \($0.line)") }
 		}
 	}
 }

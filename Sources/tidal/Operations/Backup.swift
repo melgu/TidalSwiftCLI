@@ -25,6 +25,9 @@ struct BackupFile: Encodable {
 	let playlists: Int
 	/// Of all playlists together
 	let playlistItems: Int
+	let folders: Int
+	/// Artists, tracks and videos together
+	let blocks: Int
 }
 
 /// Writes the backup, replacing a file that is there already
@@ -39,7 +42,9 @@ func writeBackup(_ backup: AccountBackup, to path: String) throws -> BackupFile 
 		path: url.path(percentEncoded: false),
 		favorites: backup.favorites.count,
 		playlists: backup.playlists.count,
-		playlistItems: backup.playlists.reduce(0) { $0 + $1.items.count }
+		playlistItems: backup.playlists.reduce(0) { $0 + $1.items.count },
+		folders: backup.folders?.count ?? 0,
+		blocks: backup.blocks?.count ?? 0
 	)
 }
 
@@ -94,6 +99,50 @@ struct RestorePlanSummary: Encodable {
 		let artists: Changes<AccountBackup.ArtistEntry>
 		/// Playlists of others
 		let playlists: Changes<AccountBackup.PlaylistEntry>
+		let mixes: Changes<AccountBackup.MixEntry>
+	}
+	
+	struct FolderMove: Encodable {
+		enum Kind: String, Encodable {
+			case folder, playlist
+		}
+		
+		let kind: Kind
+		/// The name of the folder or the title of the playlist
+		let title: String
+		/// The folder it's put into, nil for the root
+		let folder: String?
+		
+		init(_ move: FolderChanges.Move) {
+			kind = if case .folder = move.item { .folder } else { .playlist }
+			title = move.title
+			folder = move.folderName
+		}
+	}
+	
+	struct Folders: Encodable {
+		struct Rename: Encodable {
+			let from: String
+			let to: String
+		}
+		
+		/// Names of the folders
+		let create: [String]
+		let rename: [Rename]
+		/// In the order they're made
+		let move: [FolderMove]
+		let delete: [String]
+		
+		init(_ changes: FolderChanges) {
+			create = changes.create.map(\.name)
+			rename = changes.rename.map { Rename(from: $0.folder.name, to: $0.name) }
+			move = changes.moves.map(FolderMove.init)
+			delete = changes.delete.map(\.name)
+		}
+		
+		var isEmpty: Bool {
+			create.isEmpty && rename.isEmpty && move.isEmpty && delete.isEmpty
+		}
 	}
 	
 	struct PlaylistChange: Encodable {
@@ -133,7 +182,19 @@ struct RestorePlanSummary: Encodable {
 	let favorites: Favorites
 	/// The account's own playlists
 	let playlists: [PlaylistChange]
+	/// Nil for backups without folders
+	let folders: Folders?
+	/// Nil for backups without blocks
+	let blocks: Blocks?
+	
+	struct Blocks: Encodable {
+		let artists: Changes<AccountBackup.ArtistEntry>
+		let tracks: Changes<PlaylistExport.Item>
+		let videos: Changes<PlaylistExport.Item>
+	}
 	let isEmpty: Bool
+	/// Whether the restore also changes what the account has, beyond adding to it
+	private let override: Bool
 	
 	@MainActor
 	init(_ plan: AccountRestorePlan, session: Session) {
@@ -144,17 +205,23 @@ struct RestorePlanSummary: Encodable {
 			videos: Changes(plan.videos),
 			albums: Changes(plan.albums),
 			artists: Changes(plan.artists),
-			playlists: Changes(plan.playlists)
+			playlists: Changes(plan.playlists),
+			mixes: Changes(plan.mixes)
 		)
 		playlists = plan.ownPlaylists.map(PlaylistChange.init)
+		folders = plan.backup.folders == nil ? nil : Folders(plan.folders)
+		blocks = plan.backup.blocks == nil ? nil : Blocks(artists: Changes(plan.blocks.artists), tracks: Changes(plan.blocks.tracks), videos: Changes(plan.blocks.videos))
 		isEmpty = plan.isEmpty
+		override = plan.options.override
 	}
 	
-	/// What the restore removes or replaces
+	/// What the restore removes, replaces or rearranges
 	var removesSomething: Bool {
 		!favorites.tracks.remove.isEmpty || !favorites.videos.remove.isEmpty || !favorites.albums.remove.isEmpty
-			|| !favorites.artists.remove.isEmpty || !favorites.playlists.remove.isEmpty
+			|| !favorites.artists.remove.isEmpty || !favorites.playlists.remove.isEmpty || !favorites.mixes.remove.isEmpty
+			|| blocks.map { !$0.artists.remove.isEmpty || !$0.tracks.remove.isEmpty || !$0.videos.remove.isEmpty } == true
 			|| playlists.contains { $0.action == .replace || $0.action == .delete }
+			|| folders.map { !$0.rename.isEmpty || !$0.delete.isEmpty || (override && !$0.move.isEmpty) } == true
 	}
 }
 
@@ -181,6 +248,29 @@ struct RestoreSummary: Encodable {
 		let albums: Favorites<AccountBackup.AlbumEntry>
 		let artists: Favorites<AccountBackup.ArtistEntry>
 		let playlists: Favorites<AccountBackup.PlaylistEntry>
+		let mixes: Favorites<AccountBackup.MixEntry>
+	}
+	
+	struct FolderResults: Encodable {
+		let created: [String]
+		let renamed: [RestorePlanSummary.Folders.Rename]
+		let moved: [RestorePlanSummary.FolderMove]
+		/// Playlists Tidal no longer has, and moves that would have put a folder into itself
+		let skipped: [RestorePlanSummary.FolderMove]
+		let deleted: [String]
+		
+		@MainActor
+		init(_ result: AccountRestoreResult.FolderResult) {
+			created = result.created
+			renamed = result.renamed.map { .init(from: $0.folder.name, to: $0.name) }
+			moved = result.moved.map(RestorePlanSummary.FolderMove.init)
+			skipped = result.skipped.map(RestorePlanSummary.FolderMove.init)
+			deleted = result.deleted.map(\.name)
+		}
+		
+		var isEmpty: Bool {
+			created.isEmpty && renamed.isEmpty && moved.isEmpty && skipped.isEmpty && deleted.isEmpty
+		}
 	}
 	
 	struct PlaylistResult: Encodable {
@@ -197,6 +287,15 @@ struct RestoreSummary: Encodable {
 	/// The account's own playlists that changed
 	let playlists: [PlaylistResult]
 	let unchangedPlaylists: Int
+	let folders: FolderResults
+	/// `added` are the ones blocked, `removed` the ones unblocked
+	let blocks: BlockResults
+	
+	struct BlockResults: Encodable {
+		let artists: Favorites<AccountBackup.ArtistEntry>
+		let tracks: Favorites<PlaylistExport.Item>
+		let videos: Favorites<PlaylistExport.Item>
+	}
 	
 	@MainActor
 	init(_ result: AccountRestoreResult, session: Session) {
@@ -209,8 +308,11 @@ struct RestoreSummary: Encodable {
 			videos: Favorites(result.videos),
 			albums: Favorites(result.albums),
 			artists: Favorites(result.artists),
-			playlists: Favorites(result.playlists)
+			playlists: Favorites(result.playlists),
+			mixes: Favorites(result.mixes)
 		)
+		folders = FolderResults(result.folders)
+		blocks = BlockResults(artists: Favorites(result.blockedArtists), tracks: Favorites(result.blockedTracks), videos: Favorites(result.blockedVideos))
 		let changed = result.ownPlaylists.filter { !$0.change.isUnchanged }
 		playlists = changed.map { playlist in
 			PlaylistResult(
