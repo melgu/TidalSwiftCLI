@@ -2,7 +2,7 @@
 
 ## About This Project
 
-TidalSwiftCLI is the `tidal` command line tool for Tidal, built on [TidalSwiftLib](https://github.com/melgu/TidalSwiftLib). It searches, lists artist releases and new releases, edits playlists and favorites, downloads, and runs as an MCP server (`tidal mcp`).
+TidalSwiftCLI is the `tidal` command line tool for Tidal, built on [TidalSwiftLib](https://github.com/melgu/TidalSwiftLib). It searches, lists artist releases and new releases, edits playlists, their folders and favorites, backs up and restores the account, downloads, and runs as an MCP server (`tidal mcp`).
 
 ## Project Structure & Module Organization
 

@@ -166,6 +166,52 @@ let tools: [Tool] = [
 		annotations: destructive
 	),
 	Tool(
+		name: "list_folders",
+		title: "List Folders",
+		description: "The folders of the account's playlists as a tree, with the playlists in them and at the root, own ones and favorites of others. Each playlist is in one folder at most.",
+		inputSchema: schema([:]),
+		annotations: readOnly
+	),
+	Tool(
+		name: "create_folder",
+		title: "Create Folder",
+		description: "Create a folder for playlists.",
+		inputSchema: schema([
+			"name": string("The name"),
+			"in": string("\(folderDescription) to create it in. Defaults to the root.")
+		], required: ["name"]),
+		annotations: additive
+	),
+	Tool(
+		name: "rename_folder",
+		title: "Rename Folder",
+		description: "Rename a folder of playlists.",
+		inputSchema: schema([
+			"folder": string(folderDescription),
+			"name": string("The new name")
+		], required: ["folder", "name"]),
+		annotations: additive
+	),
+	Tool(
+		name: "move_to_folder",
+		title: "Move to Folder",
+		description: "Move playlists and folders into a folder, or to the root. Moving a playlist takes it out of its current folder, and a folder takes its contents along.",
+		inputSchema: schema([
+			"items": array(string("A playlist link or UUID, or a folder ID or name. Own playlists and favorites of others.")),
+			"into": string("\(folderDescription) to move them into. Leave it out to move them to the root.")
+		], required: ["items"]),
+		annotations: additive
+	),
+	Tool(
+		name: "delete_folder",
+		title: "Delete Folder",
+		description: "Delete a folder of playlists. The playlists and folders in it are kept and moved to the root.",
+		inputSchema: schema([
+			"folder": string(folderDescription)
+		], required: ["folder"]),
+		annotations: destructive
+	),
+	Tool(
 		name: "list_favorites",
 		title: "List Favorites",
 		description: "The account's favorite tracks, albums, artists, playlists or videos.",
@@ -326,6 +372,16 @@ func callTool(_ name: String, arguments: ToolArguments, session: Session, progre
 			target = .append(playlist: playlist, allowDuplicates: allowDuplicates)
 		}
 		return try jsonString(await importPlaylist(session: session, export: export, target: target))
+	case "list_folders":
+		return try jsonString(await folderTree(session: session))
+	case "create_folder":
+		return try jsonString(await createFolder(session: session, name: arguments.string("name"), in: arguments.optionalString("in")))
+	case "rename_folder":
+		return try jsonString(await renameFolder(session: session, reference: arguments.string("folder"), to: arguments.string("name")))
+	case "move_to_folder":
+		return try jsonString(await moveToFolder(session: session, items: arguments.strings("items"), into: arguments.optionalString("into")))
+	case "delete_folder":
+		return try jsonString(await deleteFolder(session: session, reference: arguments.string("folder")))
 	case "list_favorites":
 		guard let kind = try arguments.kind("type") else {
 			throw CLIError("Missing argument type")
@@ -379,6 +435,7 @@ func callTool(_ name: String, arguments: ToolArguments, session: Session, progre
 }
 
 private let playlistDescription = "A playlist link or UUID"
+private let folderDescription = "A folder's ID or name"
 private let itemDescription = "A Tidal link, playlist UUID or ID"
 private let typeDescription = "What bare IDs are. Not needed for links and UUIDs."
 

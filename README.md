@@ -1,6 +1,6 @@
 # TidalSwiftCLI
 
-`tidal`, a command line tool for Tidal: search, artist releases, new releases of your favorite artists, playlists, favorites, backup and restore of your account, and downloads. It also runs as an MCP server, so AI assistants can use your Tidal account. Built on [TidalSwiftLib](https://github.com/melgu/TidalSwiftLib), the library behind the [TidalSwift](https://github.com/melgu/TidalSwift) app.
+`tidal`, a command line tool for Tidal: search, artist releases, new releases of your favorite artists, playlists and their folders, favorites, backup and restore of your account, and downloads. It also runs as an MCP server, so AI assistants can use your Tidal account. Built on [TidalSwiftLib](https://github.com/melgu/TidalSwiftLib), the library behind the [TidalSwift](https://github.com/melgu/TidalSwift) app.
 
 Requires macOS 14.
 
@@ -41,6 +41,8 @@ tidal playlists list
 tidal playlists export <playlist> --out roadtrip.json
 tidal playlists import roadtrip.json                                    # as a new playlist
 tidal playlists import roadtrip.json --into <playlist> --override       # replaces its items
+tidal folders create Roadtrips
+tidal folders move <playlist> --into Roadtrips                          # folders are given by ID or name
 tidal favorites add https://tidal.com/browse/album/123456
 tidal backup create --out tidal-backup.json                             # see Backup & Restore below
 tidal download https://tidal.com/browse/album/123456
@@ -77,7 +79,7 @@ Single playlists can be exported and imported the same way with `tidal playlists
 
 ## MCP Server
 
-`tidal mcp` runs an MCP server on stdin and stdout with tools for search, releases, playlists, favorites, backups and downloads. If the account isn't logged in yet, it asks the client to show the login link. To add it to Claude Code for all projects:
+`tidal mcp` runs an MCP server on stdin and stdout with tools for search, releases, playlists and their folders, favorites, backups and downloads. If the account isn't logged in yet, it asks the client to show the login link. To add it to Claude Code for all projects:
 
 ```sh
 claude mcp add -s user tidal -- tidal mcp
