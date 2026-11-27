@@ -9,7 +9,7 @@
 import ArgumentParser
 
 /// The tool's version, for `--version` and the MCP server. Matches the release tag.
-let toolVersion = "1.3.0"
+let toolVersion = "1.3.1"
 
 @main
 struct Tidal: AsyncParsableCommand {
